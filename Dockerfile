@@ -1,6 +1,6 @@
 # This image provides a Python 3.7 environment you can use to run your Python
 # applications.
-FROM registry.fedoraproject.org/f31/s2i-base:latest AS base
+FROM registry.fedoraproject.org/f31/s2i-base:latest
 
 EXPOSE 8080
 
@@ -39,11 +39,18 @@ LABEL summary="$SUMMARY" \
       maintainer="SoftwareCollections.org <sclorg@redhat.com>"
 
 RUN INSTALL_PKGS="python3 python3-devel python3-setuptools python3-pip python3-virtualenv \
-        nss_wrapper httpd httpd-devel atlas-devel gcc-gfortran \
-        libffi-devel libtool-ltdl enchant redhat-rpm-config" && \
+    nss_wrapper httpd httpd-devel atlas-devel gcc-gfortran \
+    libffi-devel libtool-ltdl enchant redhat-rpm-config" && \
     dnf -y --setopt=tsflags=nodocs install $INSTALL_PKGS && \
     rpm -V $INSTALL_PKGS && \
-    dnf -y clean all --enablerepo='*'
+    dnf -y clean all --enablerepo='*' && \
+    curl https://packages.microsoft.com/config/rhel/8/prod.repo > /etc/yum.repos.d/mssql-release.repo && \
+    ACCEPT_EULA=Y dnf install -y e2fsprogs-libs msodbcsql17 && \
+    ACCEPT_EULA=Y dnf install -y mssql-tools && \
+    echo 'export PATH="$PATH:/opt/mssql-tools/bin"' >> ~/.bash_profile && \
+    echo 'export PATH="$PATH:/opt/mssql-tools/bin"' >> ~/.bashrc && \
+    source ~/.bashrc && \
+    dnf install -y unixODBC-devel
 
 # Copy the S2I scripts from the specific language image to $STI_SCRIPTS_PATH.
 COPY ./s2i/bin/ $STI_SCRIPTS_PATH
@@ -71,32 +78,3 @@ USER 1001
 
 # Set the default CMD to print the usage of the language image.
 CMD $STI_SCRIPTS_PATH/usage
-
-FROM base AS streamlit-builder
-
-# Set labels used in OpenShift to describe the builder images
-LABEL io.k8s.description="Builder image for Streamlit dashboards." \
-      io.k8s.display-name="Streamlit" \
-      io.openshift.expose-services=" 8501:http" \
-      io.openshift.tags="builder,python,streamlit"
-
-# Switch to root user
-USER 0
-
-# Add Prereqs. for pyodbc
-RUN curl https://packages.microsoft.com/config/rhel/8/prod.repo > /etc/yum.repos.d/mssql-release.repo && \
-    ACCEPT_EULA=Y yum install -y e2fsprogs-libs msodbcsql17 && \
-    ACCEPT_EULA=Y yum install -y mssql-tools && \
-    echo 'export PATH="$PATH:/opt/mssql-tools/bin"' >> ~/.bash_profile && \
-    echo 'export PATH="$PATH:/opt/mssql-tools/bin"' >> ~/.bashrc && \
-    source ~/.bashrc && \
-    yum install -y unixODBC-devel
-
-# Set the default user for the image, the user itself was created in the base image
-USER 1001
-
-# Specify the ports the final image will expose
-EXPOSE 8501
-
-# Set the default CMD to print the usage of the image, if somebody does docker run
-CMD ["usage"]
